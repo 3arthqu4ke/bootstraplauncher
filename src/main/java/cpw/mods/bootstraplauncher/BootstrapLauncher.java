@@ -183,8 +183,18 @@ public class BootstrapLauncher {
         var allTargets = Arrays.stream(secureJarsArray).map(SecureJar::name).toList();
         // Creates a module finder which uses the list of SecureJars to find modules from
         var jarModuleFinder = JarModuleFinder.of(secureJarsArray);
+
+        // Use the layer of the BootstrapLauncher, in most cases this is the same as ModuleLayer.boot()
+        // But maybe someone wants to load Forge dynamically.
+        // In that case they need to create a new layer containing the modules to load.
+        // Then the BootstrapLauncher will be on that layer and it would be better to use it.
+        ModuleLayer boot = BootstrapLauncher.class.getModule().getLayer();
+        if (DEBUG) {
+            System.out.println("BootstrapLauncher Layer " + boot + ", boot layer: " + ModuleLayer.boot() + ", same: " + (boot == ModuleLayer.boot()));
+        }
+
         // Retrieve the boot layer's configuration
-        var bootModuleConfiguration = ModuleLayer.boot().configuration();
+        var bootModuleConfiguration = boot.configuration();
 
         // Creates the module layer configuration for the bootstrap layer module
         // The parent configuration is the boot layer configuration (above)
@@ -198,10 +208,10 @@ public class BootstrapLauncher {
         ClassLoader parentLoader = classloaderIsolation ? null : Thread.currentThread().getContextClassLoader();
         // Creates the module class loader, which does the loading of classes and resources from the bootstrap module layer/configuration,
         // falling back to the boot layer if not in the bootstrap layer
-        var moduleClassLoader = new ModuleClassLoader("MC-BOOTSTRAP", bootstrapConfiguration, List.of(ModuleLayer.boot()), parentLoader);
+        var moduleClassLoader = new ModuleClassLoader("MC-BOOTSTRAP", bootstrapConfiguration, List.of(boot), parentLoader);
         // Actually create the module layer, using the bootstrap configuration above, the boot layer as the parent layer (as configured),
         // and mapping all modules to the module class loader
-        var layer = ModuleLayer.defineModules(bootstrapConfiguration, List.of(ModuleLayer.boot()), m -> moduleClassLoader);
+        var layer = ModuleLayer.defineModules(bootstrapConfiguration, List.of(boot), m -> moduleClassLoader);
         // Set the context class loader to the module class loader from this point forward
         Thread.currentThread().setContextClassLoader(moduleClassLoader);
 
@@ -216,7 +226,7 @@ public class BootstrapLauncher {
     private static Map<String, Path> findLoadedModules() {
         record ModuleWithLocation(String name, Path location) {
         }
-        return ModuleLayer.boot().configuration().modules().stream()
+        return BootstrapLauncher.class.getModule().getLayer().configuration().modules().stream()
                 .map(module -> {
                     var reference = module.reference();
                     var moduleName = reference.descriptor().name();
